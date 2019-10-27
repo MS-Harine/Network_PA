@@ -31,7 +31,6 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 
-	// Bind the socket
 	memset(&sock_addr, 0, sizeof(sock_addr));
 	sock_addr.sin_family = PF_INET;
 	sock_addr.sin_port = htons(port);
@@ -41,6 +40,13 @@ int main(int argc, char *argv[]) {
 		perror("connect error");
 		exit(1);
 	}
+
+	strcpy(message, "0123456789");
+	write(sock, message, strlen(message));
+	strcpy(message, "ABCDEFGHIJ");
+	write(sock, message, strlen(message));
+ 	strcpy(message, "KLMNOPQRST");
+	write(sock, message, strlen(message));
 	
 	while (1) {
 		fputs("Input message (q to quit): ", stdout);
@@ -51,9 +57,9 @@ int main(int argc, char *argv[]) {
 
 		write(sock, message, strlen(message));
 
-		str_len = read(sock, message, BUF_SIZE - 1);
-		message[str_len] = 0;
-		printf("Message from server: %s\n", message);
+		// str_len = read(sock, message, BUF_SIZE - 1);
+		// message[str_len] = 0;
+		// printf("Message from server: %s\n", message);
 	}
 
 	close(sock);

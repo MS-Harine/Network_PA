@@ -9,6 +9,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#define CHILD_PROCESS 0
+
 static void child_handler(int sig) {
 	int status = 0;
 	pid_t pid = 0;
@@ -25,7 +27,6 @@ int main(int argc, char *argv[]) {
 	struct sockaddr_in serv_addr;
 	struct sockaddr_in clnt_addr;
 
-	// Set parameters
 	if (argc != 3) {
 		fprintf(stderr, "Usage %s <port_number> <buffer_size>\n", argv[0]);
 		exit(1);
@@ -43,14 +44,11 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 
-
-	// Create socket
 	if ((serv_sock = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
 		perror("socket error");
 		exit(1);
 	}
 
-	// Bind the socket
 	memset(&serv_addr, 0, sizeof(serv_addr));
 	serv_addr.sin_family = PF_INET;
 	serv_addr.sin_port = htons(port);
@@ -60,7 +58,6 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 
-	// Listen
 	if (listen(serv_sock, 5) < 0) {
 		perror("Listen error");
 		exit(1);
@@ -69,7 +66,6 @@ int main(int argc, char *argv[]) {
 	clnt_addr_size = sizeof(clnt_addr);
 	signal(SIGCHLD, (void *)child_handler);
 	
-	// Start server for waiting
 	while (1) {
 		clnt_sock = accept(serv_sock, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
 		if (clnt_sock == -1) {
@@ -82,19 +78,20 @@ int main(int argc, char *argv[]) {
 			perror("fork error");
 			exit(1);
 		}
-		else if (pid == 0) { // Child Process
+		else if (pid == CHILD_PROCESS) {
 			close(serv_sock);
+			sleep(5);
 			message = (char *)malloc((buf_size + 1) * sizeof(char));
 			while((str_len = read(clnt_sock, message, buf_size)) > 0) {
 				message[str_len] = 0;
 				printf("%s: %s", inet_ntoa(clnt_addr.sin_addr), message);
-				write(clnt_sock, message, strlen(message));
+				//write(clnt_sock, message, strlen(message));
 			}
 			free(message);
 			close(clnt_sock);
 			exit(0);
 		}
-		else { // Parent Process
+		else {
 			printf("Connect with %s (%d)\n", inet_ntoa(clnt_addr.sin_addr), pid);
 			close(clnt_sock);
 		}
