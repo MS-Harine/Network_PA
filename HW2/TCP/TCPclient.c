@@ -58,6 +58,7 @@ int main(int argc, char *argv[]) {
 		data_total_len += data_len;
 		write(sock, message, data_len);
 	}
+	printf("Success to send file to server!\n");
 
 	fclose(fp);
 	close(sock);

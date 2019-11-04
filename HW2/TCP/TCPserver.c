@@ -18,6 +18,7 @@
 int main(int argc, char *argv[]) {
 	int serv_sock = 0, port = 0, is_filename = 1;
 	int clnt_sock = 0, clnt_addr_size = 0, data_len = 0;
+	int i = 0;
 	char *message = NULL, filename[FILENAME_MAX] = { 0, };
 	struct sockaddr_in serv_addr;
 	struct sockaddr_in clnt_addr;
@@ -55,6 +56,9 @@ int main(int argc, char *argv[]) {
 
 	clnt_addr_size = sizeof(clnt_addr);
 	while (1) {
+		is_filename = 1;
+		memset(filename, 0, sizeof(char) * BUFSIZ);
+
 		clnt_sock = accept(serv_sock, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
 		if (clnt_sock == -1) {
 			perror("accept error");
@@ -65,7 +69,17 @@ int main(int argc, char *argv[]) {
 		message = (char *)malloc(BUFSIZ * sizeof(char));
 		while((data_len = read(clnt_sock, message, BUFSIZ)) > 0) {
 			if (is_filename) {
-				strncpy(filename, message, strlen(message) + 1);
+				for (i = 0; i < data_len; i++) {
+					if (message[i] == 0)
+						break;
+				}
+
+				if (i == data_len) {
+					strncat(filename, message, data_len);
+					continue;
+				}
+
+				strncat(filename, message, strlen(message) + 1);
 				strncpy(message, message + strlen(message) + 1, data_len - strlen(message) - 1);
 				data_len -= (strlen(message) + 1);
 				is_filename = !is_filename;
@@ -80,6 +94,7 @@ int main(int argc, char *argv[]) {
 		}
 		fclose(fp);
 		free(message);
+		printf("Success to receive file %s from client %s\n", filename, inet_ntoa(clnt_addr.sin_addr));
 		close(clnt_sock);
 	}
 
