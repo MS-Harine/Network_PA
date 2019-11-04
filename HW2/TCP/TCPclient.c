@@ -51,9 +51,7 @@ int main(int argc, char *argv[]) {
 	printf("Try to sending file %s\n", filename);
 
 	strcpy(message, filename);
-	data_len = fread(message + strlen(filename) + 1, sizeof(char), BUFSIZ - strlen(filename) - 1, fp);
-	data_total_len += data_len;
-	write(sock, message, strlen(filename) + data_len + 1);
+	write(sock, message, strlen(filename) + 1);
 
 	while (feof(fp) == 0) {
 		data_len = fread(message, sizeof(char), BUFSIZ, fp);

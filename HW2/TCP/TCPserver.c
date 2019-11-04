@@ -70,7 +70,7 @@ int main(int argc, char *argv[]) {
 				data_len -= (strlen(message) + 1);
 				is_filename = !is_filename;
 				DPRINT(printf("Filename: %s\n", filename));
-				fp = fopen(filename, "w");
+				fp = fopen(filename, "wb");
 				if (fp == NULL) {
 					perror("Fail to open file");
 					break;
