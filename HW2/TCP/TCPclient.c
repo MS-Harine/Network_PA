@@ -8,6 +8,8 @@
 
 int main(int argc, char *argv[]) {
 	int sock = 0, port = 0, data_len = 0, data_total_len = 0;
+	int file_size = 0, str_len = 0, total_str_len = 0;
+	int i = 0;
 	char message[BUFSIZ] = { 0, }, *filename = NULL;
 	char *server_ip = NULL;
 	struct sockaddr_in sock_addr;
@@ -31,6 +33,10 @@ int main(int argc, char *argv[]) {
 		perror("Fail to open file: ");
 		exit(1);
 	}
+
+	fseek(fp, 0, SEEK_END);
+	file_size = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
 
 	if ((sock = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
 		perror("socket error");
@@ -56,8 +62,12 @@ int main(int argc, char *argv[]) {
 	while (feof(fp) == 0) {
 		data_len = fread(message, sizeof(char), BUFSIZ, fp);
 		data_total_len += data_len;
-		write(sock, message, data_len);
+		str_len = write(sock, message, data_len);
+		total_str_len += str_len;
+		printf("Sending >>>>>>>>>>>>> (%d/%d)\r", total_str_len, file_size);
 	}
+	printf("\n");
+	printf("Success to send file to server!\n");
 
 	fclose(fp);
 	close(sock);
