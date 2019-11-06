@@ -20,8 +20,8 @@ static void child_handler(int sig) {
 }
 
 int main(int argc, char *argv[]) {
-	int serv_sock = 0, port = 0, buf_size = 0;
-	int clnt_sock = 0, clnt_addr_size = 0, str_len = 0;
+	int serv_sock = 0, port = 0, BUFSIZ = 0;
+	int clnt_sock = 0, clnt_addr_size = 0, data_len = 0;
 	int num = 0;
 	char *message = NULL;
 	struct sockaddr_in serv_addr;
@@ -38,12 +38,7 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 
-	buf_size = atoi(argv[2]);
-	if (buf_size < 1) {
-		fprintf(stderr, "Usage valid buf size\n");
-		exit(1);
-	}
-	message = (char *)malloc(sizeof(char) * (buf_size + 1));
+	message = (char *)malloc(sizeof(char) * BUFSIZ);
 
 	if ((serv_sock = socket(PF_INET, SOCK_DGRAM, 0)) < 0) {
 		perror("socket error");
@@ -61,9 +56,9 @@ int main(int argc, char *argv[]) {
 
 	while (1) {
 		clnt_addr_size = sizeof(clnt_addr);
-		str_len = recvfrom(serv_sock, message, buf_size, 0, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
-		message[str_len] = 0;
-		printf("%s: %s", inet_ntoa(clnt_addr.sin_addr), message);
+		data_len = recvfrom(serv_sock, message, BUFSIZ - 1, 0, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
+		printf("%d\n", data_len);
+		break;
 	}
 
 	free(message);
