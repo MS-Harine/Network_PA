@@ -57,12 +57,12 @@ int main(int argc, char *argv[]) {
 	clnt_addr_size = sizeof(clnt_addr);
 	while (1) {
 		is_filename = 1;
-		memset(filename, 0, sizeof(char) * BUFSIZ);
+		memset(filename, 0, FILENAME_MAX);
 
 		clnt_sock = accept(serv_sock, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
 		if (clnt_sock == -1) {
 			perror("accept error");
-			continue;
+			break;
 		}
 		printf("Connect with %s\n", inet_ntoa(clnt_addr.sin_addr));
 
@@ -75,13 +75,17 @@ int main(int argc, char *argv[]) {
 				}
 
 				if (i == data_len) {
-					strncat(filename, message, data_len);
+					for (i = 0; i < FILENAME_MAX; i++) {
+						if (filename[i] == 0)
+							break;
+					}
+					memcpy(filename + i, message, data_len);
 					continue;
 				}
 
-				strncat(filename, message, strlen(message) + 1);
-				strncpy(message, message + strlen(message) + 1, data_len - strlen(message) - 1);
+				strcat(filename, message);
 				data_len -= (strlen(message) + 1);
+				memcpy(message, message + strlen(message) + 1, data_len);
 				is_filename = !is_filename;
 				DPRINT(printf("Filename: %s\n", filename));
 				fp = fopen(filename, "wb");
