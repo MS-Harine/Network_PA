@@ -11,6 +11,9 @@
 
 #include "data.h"
 
+#define MAX_DISCON_WAIT_TIME 5
+#define min(a, b) (((a) < (b)) ? (a) : (b))
+
 #ifdef DEBUG
 #define DPRINT(func) func; setbuf(stdout, NULL);
 #else
@@ -22,6 +25,7 @@ struct client_list {
 	u_short c_say_id;
 	u_int window_size;
 	struct sockaddr_in clnt_addr;
+	int d_length;
 };
 
 char * make_header(u_short cid, int isFIN, int isSYN, u_int w_sz, u_int len);
@@ -29,25 +33,27 @@ int receive_data(int sock, char *message, int size, struct sockaddr_in *clnt_add
 DGRAM_HEADER * get_header(char *message);
 void get_content(char *content, char *message, int length);
 void connect_with(int client_num, int sockfd);
-void disconnect_with(int client_num, char *message, int len);
+void disconnect_with(int client_num, char *message, int len, int sockfd);
 void work_with(int client_num, char *message, int len, const char *filename);
 
-int client_count = 1;
+u_short client_count = 1;
 int want_to_disconnect = -1;
 struct client_list *clnt_list = NULL;
 
 void disconnect_handler() {
-	printf("Disconnect with (%d)%s\n", want_to_disconnect, inet_ntoa(clnt_list[want_to_disconnect].clnt_addr.sin_addr));
-	clnt_list[want_to_disconnect].client_id = 0;
+	printf("Disconnect with (%d) %s\n", want_to_disconnect, inet_ntoa(clnt_list[want_to_disconnect].clnt_addr.sin_addr));
+	if (client_count > want_to_disconnect)
+		clnt_list[want_to_disconnect].client_id = 0;
 }
 
 int main(int argc, char *argv[]) {
 	int sock = 0, port = 0;
 	int clnt_num = 0, data_len = 0;
-	char message[BUFSIZ] = { 0, }, filename[FILENAME_MAX] = { 0, };
+	char *message = malloc(BUFSIZ), filename[FILENAME_MAX] = { 0, };
 	struct sockaddr_in serv_addr, clnt_addr;
 	DGRAM_HEADER *header = NULL;
 	clnt_list = malloc(sizeof(struct client_list) * client_count);
+	memset(clnt_list, 0, sizeof(struct client_list) * client_count);
 
 	if (argc != 2) {
 		fprintf(stderr, "Usage %s <port_number>\n", argv[0]);
@@ -80,12 +86,17 @@ int main(int argc, char *argv[]) {
 	while (1) {
 		data_len = receive_data(sock, message, BUFSIZ, &clnt_addr, &clnt_num);
 		header = get_header(message);
-		if (header->flags & MSK_SYN) {
-			if (data_len > 0) get_content(filename, message, data_len);
+		if (data_len == -1) {
+			connect_with(clnt_num, sock);	
+		}
+		else if (header->flags & MSK_SYN) {
+			get_content(filename, message, data_len);
+			printf("Get filename: %s\n", filename);
 			connect_with(clnt_num, sock);
+			fclose(fopen(filename, "w"));
 		}
 		else if (header->flags & MSK_FIN) {
-			disconnect_with(clnt_num, message, data_len);
+			disconnect_with(clnt_num, message, data_len, sock);
 		}
 		else {
 			work_with(clnt_num, message, data_len, filename);
@@ -93,6 +104,7 @@ int main(int argc, char *argv[]) {
 		free(header);
 	}
 
+	free(message);
 	return 0;
 }
 
@@ -118,34 +130,42 @@ int receive_data(int sock, char *message, int size, struct sockaddr_in *clnt_add
 	DGRAM_HEADER *header = NULL;
 
 	addr_size = sizeof(*clnt_addr);
-	DPRINT(printf("Wait for packet...\r"));
 	data_len = recvfrom(sock, message, size, 0, (struct sockaddr *)clnt_addr, &addr_size);
-	DPRINT(printf("Packet receive from %s\n", inet_ntoa(clnt_addr->sin_addr)));
 	header = get_header(message);
-	
+
 	if (header->client_id == 0) {
 		for (i = 0; i < client_count; i++) {
-			if (clnt_list[i].c_say_id == header->c_say_id)
+			if (clnt_list[i].c_say_id == header->c_say_id) {
+				*c_num = i;
 				return -1;
+			}
 
 			if (clnt_list[i].client_id == 0)
 				break;
 		}
-
-		printf("Create new client connection (%d) %s\n", client_count, inet_ntoa(clnt_addr->sin_addr));
-
+		
 		if ((i == client_count) && (client_count % 2 == 0))
 			clnt_list = realloc(clnt_list, sizeof(struct client_list) * client_count * 2);
 
+		client_count++;
 		clnt_list[i].client_id = client_count;
 		clnt_list[i].c_say_id = header->c_say_id;
 		clnt_list[i].window_size = header->window_size;
+		clnt_list[i].d_length = 0;
 		memcpy(&clnt_list[i].clnt_addr, clnt_addr, sizeof(struct sockaddr));
 		*c_num = i;
-		client_count++;
+		
+		printf("Create new client connection (%d) %s\n", i, inet_ntoa(clnt_addr->sin_addr));
 	}
-	else
-		*c_num = header->client_id;
+	else {
+		for (i = 0; i < client_count; i++) {
+			if (clnt_list[i].client_id == header->client_id)
+				break;
+		}
+		if (i == client_count)
+			return -1;
+		*c_num = i;
+	}
 
 	free(header);
 
@@ -164,20 +184,29 @@ void get_content(char *content, char *message, int length) {
 
 void connect_with(int client_num, int sockfd) {
 	struct sockaddr_in *clnt_addr = &clnt_list[client_num].clnt_addr;
-	char *header = make_header(clnt_list[client_num].client_id, TRUE, FALSE, clnt_list[client_num].window_size, 0);
+	char *header = make_header(clnt_list[client_num].client_id, FALSE, TRUE, clnt_list[client_num].window_size, 0);
 	sendto(sockfd, header, sizeof(DGRAM_HEADER), 0, (struct sockaddr *)clnt_addr, sizeof(*clnt_addr));
 	free(header);
-	printf("Try to connect with (%d)%s\n", client_num, inet_ntoa(clnt_addr->sin_addr));
+	DPRINT(printf("Try to connect with (%d)%s\n", client_num, inet_ntoa(clnt_addr->sin_addr)));
 }
 
-void disconnect_with(int client_num, char *message, int len) {
-	char buf[BUFSIZ] = { 0, };
+void disconnect_with(int client_num, char *message, int len, int sockfd) {
+	char *buf = NULL;
+	struct sockaddr_in *clnt_addr = &clnt_list[client_num].clnt_addr;
 
+	buf = make_header(clnt_list[client_num].client_id, TRUE, FALSE, clnt_list[client_num].window_size, 0);
+	sendto(sockfd, buf, sizeof(DGRAM_HEADER), 0, (struct sockaddr *)clnt_addr, sizeof(*clnt_addr));
+	free(buf);
+	printf("\n");
+	DPRINT(printf("Try to disconnect with (%d)%s\n", client_num, inet_ntoa(clnt_addr->sin_addr)));
+
+	buf = malloc(len);
 	alarm(0);
 	get_content(buf, message, len);
 	int time = atoi(buf);
 	want_to_disconnect = client_num;
-	alarm(time);
+	alarm(min(time, MAX_DISCON_WAIT_TIME));
+	free(buf);
 }
 
 void work_with(int client_num, char *message, int len, const char *filename) {
@@ -185,11 +214,18 @@ void work_with(int client_num, char *message, int len, const char *filename) {
 	char buf[BUFSIZ] = { 0, };
 	DGRAM_HEADER *header = NULL;
 
-	printf("Work with (%d)\n", client_num);
-	fp = fopen(filename, "ab");
+	DPRINT(printf("Work with (%d) %s\n\r", client_num, inet_ntoa(clnt_list[client_num].clnt_addr.sin_addr)));
+	fp = fopen(filename, "ab+");
+	if (fp == NULL) {
+		fprintf(stderr, "Fail to open file %s\n", filename);
+		exit(1);
+	}
 	
 	header = get_header(message);
 	get_content(buf, message, len);
 	fwrite(buf, sizeof(char), header->data_length, fp);
 	fclose(fp);
+
+	clnt_list[client_num].d_length += header->data_length;
+	printf("Get data (%d) bytes\r", clnt_list[client_num].d_length);
 }
