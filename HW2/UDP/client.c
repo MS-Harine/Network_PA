@@ -10,15 +10,16 @@
 
 #include "data.h"
 
-#define TIMEOUT 1
-#define DISCON_WAIT_PLZ 3
+#define TIMEOUT 2
+#define DISCON_WAIT_PLZ 5
 
 #ifdef DEBUG
-#define DPRINT(func) func
+#define DPRINT(func) func; setbuf(stdout, NULL);
 #else
 #define DPRINT(func) ;
 #endif
 
+int reliable_sendto(int sock, char *message, int len, int flags, struct sockaddr *addr, int *addr_size, int isSYN);
 int set_blocking(int sockfd, int blocking);
 char * make_header(u_short cid, u_short csi, int isFIN, int isSYN, u_int w_sz, u_int len);
 DGRAM_HEADER * get_header(char *message);
@@ -72,13 +73,13 @@ int main(int argc, char *argv[]) {
 	free(header);
 
 	printf("Try to send filename to server...\n");
-	data_len = reliable_sendto(sock, message, sizeof(DGRAM_HEADER) + strlen(filename) + 1, 0, (struct sockaddr *)&sock_addr, &addr_len);
-	free(message);
-	printf("Filename was sent successfully!\n");
+	data_len = reliable_sendto(sock, message, sizeof(DGRAM_HEADER) + strlen(filename) + 1, 0, (struct sockaddr *)&sock_addr, &addr_len, TRUE);
+	DPRINT(printf("Filename was sent successfully!\n"));
 
-	t_header = get_header(buffer);
+	t_header = get_header(message);
 	my_id = t_header->client_id;
 	free(t_header);
+	free(message);
 	
 	fp = fopen(filename, "rb");
 	fseek(fp, 0, SEEK_END);
@@ -92,8 +93,10 @@ int main(int argc, char *argv[]) {
 		message = concat_header_message(header, buffer, data_len);
 		free(header);
 		sendto(sock, message, sizeof(DGRAM_HEADER) + data_len, 0, (struct sockaddr *)&sock_addr, sizeof(sock_addr));
+		
 		free(message);
 		printf("Sending >>>>>>>>>>>>>>>>> (%d/%d)\r", whole_data, file_len);
+		usleep(10000);
 	}
 	printf("\n");
 
@@ -104,8 +107,8 @@ int main(int argc, char *argv[]) {
 	message = concat_header_message(header, buffer, strlen(buffer) + 1);
 	free(header);
 
-	printf("Try to disconnect with server...\n");
-	data_len = reliable_sendto(sock, &message, sizeof(DGRAM_HEADER) + strlen(buffer) + 1, 0, (struct sockaddr *)&sock_addr, &addr_len);
+	DPRINT(printf("Try to disconnect with server...\n"));
+	data_len = reliable_sendto(sock, message, sizeof(DGRAM_HEADER) + strlen(buffer) + 1, 0, (struct sockaddr *)&sock_addr, &addr_len, FALSE);
 	printf("Disconnected with server successfully!\n");
 	free(message);
 
@@ -114,10 +117,11 @@ int main(int argc, char *argv[]) {
 	return 0;
 }
 
-int reliable_sendto(int sock, char *message, int len, int flags, struct sockaddr *addr, int *addr_size) {
+int reliable_sendto(int sock, char *message, int len, int flags, struct sockaddr *addr, int *addr_size, int isSYN) {
 	int start = 0, end = 0;
 	char buffer[BUFSIZ] = { 0, };
 	int data_len = 0, count = 0;
+	DGRAM_HEADER *header = NULL;
 
 	while (1) {
 		start = time(NULL);
@@ -126,8 +130,14 @@ int reliable_sendto(int sock, char *message, int len, int flags, struct sockaddr
 		set_blocking(sock, FALSE);
 		for (end = time(NULL); end - start < TIMEOUT; end = time(NULL)) {
 			data_len = recvfrom(sock, buffer, BUFSIZ, 0, addr, addr_size);
-			if (data_len >= 0)
-				break;
+			if (data_len >= 0) {
+				header = get_header(buffer);
+				if ((isSYN && (header->flags & MSK_SYN)) || (!isSYN && (header->flags & MSK_FIN))) {
+					free(header);
+					break;
+				}
+				free(header);
+			}
 		}
 		set_blocking(sock, TRUE);
 		
@@ -135,6 +145,7 @@ int reliable_sendto(int sock, char *message, int len, int flags, struct sockaddr
 			break;
 	}
 	DPRINT(printf("\n"));
+	memcpy(message, buffer, data_len);
 	return data_len;
 }
 
