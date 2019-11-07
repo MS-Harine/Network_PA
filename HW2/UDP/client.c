@@ -13,6 +13,12 @@
 #define TIMEOUT 1
 #define DISCON_WAIT_PLZ 3
 
+#ifdef DEBUG
+#define DPRINT(func) func
+#else
+#define DPRINT(func) ;
+#endif
+
 int set_blocking(int sockfd, int blocking);
 char * make_header(u_short cid, u_short csi, int isFIN, int isSYN, u_int w_sz, u_int len);
 DGRAM_HEADER * get_header(char *message);
@@ -110,11 +116,12 @@ int main(int argc, char *argv[]) {
 int reliable_sendto(int sock, char *message, int len, int flags, struct sockaddr *addr, int *addr_size) {
 	clock_t start = 0;
 	char buffer[BUFSIZ] = { 0, };
-	int data_len = 0;
+	int data_len = 0, count = 0;
 
 	start = clock();
 	while (1) {
 		sendto(sock, message, len, flags, addr, sizeof(*addr_size));
+		DPRINT(printf("Try to connect..... %d\r", count++));
 		set_blocking(sock, FALSE);
 		while (((double)(clock() - start) / CLOCKS_PER_SEC) < TIMEOUT) {
 			data_len = recvfrom(sock, buffer, BUFSIZ, 0, addr, addr_size);
@@ -126,6 +133,7 @@ int reliable_sendto(int sock, char *message, int len, int flags, struct sockaddr
 		if (data_len >= 0)
 			break;
 	}
+	DPRINT(printf("\n"));
 	return data_len;
 }	
 

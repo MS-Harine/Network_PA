@@ -11,6 +11,12 @@
 
 #include "data.h"
 
+#ifdef DEBUG
+#define DPRINT(func) func
+#else
+#define DPRINT(func) ;
+#endif
+
 struct client_list {
 	u_short client_id;
 	u_short c_say_id;
@@ -69,6 +75,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	signal(SIGALRM, disconnect_handler);
+	DPRINT(printf("Server ready\n"));
 
 	while (1) {
 		data_len = receive_data(sock, message, BUFSIZ, &clnt_addr, &clnt_num);
@@ -112,6 +119,7 @@ int receive_data(int sock, char *message, int size, struct sockaddr_in *clnt_add
 
 	addr_size = sizeof(*clnt_addr);
 	data_len = recvfrom(sock, message, size, 0, (struct sockaddr *)clnt_addr, &addr_size);
+	DPRINT(printf("Packet receive from %s\n", inet_ntoa(clnt_addr->sin_addr)));
 	header = get_header(message);
 	
 	if (header->client_id == 0) {
@@ -122,6 +130,8 @@ int receive_data(int sock, char *message, int size, struct sockaddr_in *clnt_add
 			if (clnt_list[i].client_id == 0)
 				break;
 		}
+
+		printf("Create new client connection (%d) %s\n", client_count, inet_ntoa(clnt_addr->sin_addr));
 
 		if ((i == client_count) && (client_count % 2 == 0))
 			clnt_list = realloc(clnt_list, sizeof(struct client_list) * client_count * 2);
