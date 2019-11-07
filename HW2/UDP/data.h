@@ -13,6 +13,7 @@
 
 typedef struct datagram_header {
 	u_short client_id;
+	u_short c_say_id;
 	u_char flags;
 	u_int window_size;
 	u_int data_length;
