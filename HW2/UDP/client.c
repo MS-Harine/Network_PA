@@ -30,7 +30,7 @@ int main(int argc, char *argv[]) {
 	int flag = 0, addr_len = 0, file_len = 0;
 	char *message = NULL, buffer[BUFSIZ] = { 0, }, filename[FILENAME_MAX] = { 0, };
 	char *server_ip = NULL, *header = NULL;
-	clock_t p_start = 0, start = 0, p_end = 0;
+	int p_start = 0, p_end = 0;
 	struct sockaddr_in sock_addr;
 	DGRAM_HEADER *t_header = NULL;
 	u_short my_id = 0;
@@ -64,8 +64,9 @@ int main(int argc, char *argv[]) {
 	addr_len = sizeof(sock_addr);
 	my_id = rand();
 
-	p_start = clock();
+	p_start = time(NULL);
 
+	int i = 0;
 	header = make_header(0, my_id, FALSE, TRUE, BUFSIZ, sizeof(char) * (strlen(filename) + 1));
 	message = concat_header_message(header, filename, strlen(filename) + 1);
 	free(header);
@@ -104,26 +105,26 @@ int main(int argc, char *argv[]) {
 	free(header);
 
 	printf("Try to disconnect with server...\n");
-	data_len = reliable_sendto(sock, message, sizeof(DGRAM_HEADER) + strlen(buffer) + 1, 0, (struct sockaddr *)&sock_addr, &addr_len);
+	data_len = reliable_sendto(sock, &message, sizeof(DGRAM_HEADER) + strlen(buffer) + 1, 0, (struct sockaddr *)&sock_addr, &addr_len);
 	printf("Disconnected with server successfully!\n");
 	free(message);
 
-	p_end = clock();
-	printf("Data transmission time: %.2f\n", (double)(p_end - p_start) / CLOCKS_PER_SEC);
+	p_end = time(NULL);
+	printf("Data transmission time: %dsec\n", p_end - p_start);
 	return 0;
 }
 
 int reliable_sendto(int sock, char *message, int len, int flags, struct sockaddr *addr, int *addr_size) {
-	clock_t start = 0;
+	int start = 0, end = 0;
 	char buffer[BUFSIZ] = { 0, };
 	int data_len = 0, count = 0;
 
-	start = clock();
 	while (1) {
-		sendto(sock, message, len, flags, addr, sizeof(*addr_size));
-		DPRINT(printf("Try to connect..... %d\r", count++));
+		start = time(NULL);
+		sendto(sock, message, len, flags, addr, sizeof(*addr));
+		DPRINT(printf("Try to connect..... %d\r", count++); setbuf(stdout, NULL);)
 		set_blocking(sock, FALSE);
-		while (((double)(clock() - start) / CLOCKS_PER_SEC) < TIMEOUT) {
+		for (end = time(NULL); end - start < TIMEOUT; end = time(NULL)) {
 			data_len = recvfrom(sock, buffer, BUFSIZ, 0, addr, addr_size);
 			if (data_len >= 0)
 				break;
@@ -135,7 +136,7 @@ int reliable_sendto(int sock, char *message, int len, int flags, struct sockaddr
 	}
 	DPRINT(printf("\n"));
 	return data_len;
-}	
+}
 
 int set_blocking(int sockfd, int blocking) {
 	int flag = fcntl(sockfd, F_GETFL, 0);
@@ -150,7 +151,7 @@ char * make_header(u_short cid, u_short csi, int isFIN, int isSYN, u_int w_sz, u
 	DGRAM_HEADER *header = malloc(sizeof(DGRAM_HEADER));
 	header->client_id = cid;
 	header->c_say_id = csi;
-	header->flags = 0;
+	header->flags &= MSK_CLR;
 	if (isFIN) header->flags |= MSK_FIN;
 	if (isSYN) header->flags |= MSK_SYN;
 	header->window_size = w_sz;

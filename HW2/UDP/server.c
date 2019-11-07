@@ -12,7 +12,7 @@
 #include "data.h"
 
 #ifdef DEBUG
-#define DPRINT(func) func
+#define DPRINT(func) func; setbuf(stdout, NULL);
 #else
 #define DPRINT(func) ;
 #endif
@@ -118,6 +118,7 @@ int receive_data(int sock, char *message, int size, struct sockaddr_in *clnt_add
 	DGRAM_HEADER *header = NULL;
 
 	addr_size = sizeof(*clnt_addr);
+	DPRINT(printf("Wait for packet...\r"));
 	data_len = recvfrom(sock, message, size, 0, (struct sockaddr *)clnt_addr, &addr_size);
 	DPRINT(printf("Packet receive from %s\n", inet_ntoa(clnt_addr->sin_addr)));
 	header = get_header(message);
