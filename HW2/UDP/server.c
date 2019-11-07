@@ -9,26 +9,126 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#define CHILD_PROCESS 0
+#include "data.h"
 
-static void child_handler(int sig) {
-	int status = 0;
-	pid_t pid = 0;
-	while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-		fprintf(stderr, "Disconnect with %d\n", pid);
+struct client_list {
+	u_short client_id;
+	u_int window_size;
+	struct sockaddr_in clnt_addr;
+};
+
+int client_count = 0;
+int want_to_disconnect = -1;
+struct client_list *clnt_list = NULL;
+
+char * make_header(u_short cid, int isFIN, int isSYN, u_int w_sz, u_int len) {
+	DGRAM_HEADER *header = malloc(sizeof(DGRAM_HEADER));
+	header->client_id = cid;
+	header->flags = 0;
+	if (isFIN) header->flags |= MSK_FIN;
+	if (isSYN) header->flags |= MSK_SYN;
+	header->window_size = w_sz;
+	header->data_length = len;
+	
+	char *h_message = malloc(sizeof(DGRAM_HEADER));
+	memcpy(h_message, header, sizeof(DGRAM_HEADER));
+	free(header);
+
+	return h_message;
+}
+
+DGRAM_HEADER * get_header(char *message) {
+	DGRAM_HEADER *header = malloc(sizeof(DGRAM_HEADER));
+	memcpy(header, message, sizeof(DGRAM_HEADER));
+	return header;
+}
+
+int receive_data(int sock, char *message, int size, struct sockaddr_in *clnt_addr, int *c_num) {
+	int data_len = 0, addr_size = 0;
+	int i = 0;
+	DGRAM_HEADER *header = NULL;
+
+	addr_size = sizeof(*clnt_addr);
+	data_len = recvfrom(sock, message, size, 0, (struct sockaddr *)clnt_addr, &addr_size);
+	header = get_header(message);
+	
+	if (header->client_id == 0) {
+		if (!(header->flags & MSK_SYN))
+			return -1;
+
+		for (i = 0; i < client_count; i++) {
+			if (clnt_list[i].client_id == 0)
+				break;
+		}
+
+		if ((i == client_count) && (client_count % 2 == 0))
+			clnt_list = realloc(clnt_list, sizeof(struct client_list) * client_count * 2);
+		
+		clnt_list[i].client_id = client_count;
+		clnt_list[i].window_size = header->window_size;
+		memcpy(&clnt_list[i].clnt_addr, clnt_addr, sizeof(struct sockaddr));
+		*c_num = i;
+		client_count++;
 	}
+	else
+		*c_num = header->client_id;
+
+	free(header);
+
+	return data_len;
+}
+
+void get_content(char *content, char *message, int length) {
+	memcpy(content, message + sizeof(DGRAM_HEADER), length - sizeof(DGRAM_HEADER));
+}
+
+void connect_with(int client_num, int sockfd) {
+	struct sockaddr_in *clnt_addr = &clnt_list[client_num].clnt_addr;
+	char *header = make_header(clnt_list[client_num].client_id, TRUE, FALSE, clnt_list[client_num].window_size, 0);
+	sendto(sockfd, header, sizeof(DGRAM_HEADER), 0, (struct sockaddr *)clnt_addr, sizeof(*clnt_addr));
+	free(header);
+	printf("Try to connect with (%d)%s\n", client_num, inet_ntoa(clnt_addr->sin_addr));
+}
+
+void disconnect_handler() {
+	printf("Disconnect with (%d)%s\n", want_to_disconnect, inet_ntoa(clnt_list[want_to_disconnect].clnt_addr.sin_addr));
+	clnt_list[want_to_disconnect].client_id = 0;
+}
+
+void disconnect_with(int client_num, char *message, int len) {
+	char buf[BUFSIZ] = { 0, };
+
+	alarm(0);
+	get_content(buf, message, len);
+	int time = atoi(buf);
+	want_to_disconnect = client_num;
+	alarm(time);
+}
+
+void work_with(int client_num, char *message, int len, const char *filename) {
+	FILE *fp = NULL;
+	char buf[BUFSIZ] = { 0, };
+	DGRAM_HEADER *header = NULL;
+
+	printf("Work with (%d)\n", client_num);
+	fp = fopen(filename, "ab");
+	
+	header = get_header(message);
+	get_content(buf, message, len);
+	fwrite(buf, sizeof(char), header->data_length, fp);
+	fclose(fp);
 }
 
 int main(int argc, char *argv[]) {
-	int serv_sock = 0, port = 0, BUFSIZ = 0;
-	int clnt_sock = 0, clnt_addr_size = 0, data_len = 0;
-	int num = 0;
-	char *message = NULL;
-	struct sockaddr_in serv_addr;
-	struct sockaddr_in clnt_addr;
+	int sock = 0, port = 0;
+	int clnt_num = 0, data_len = 0;
+	char message[BUFSIZ] = { 0, }, filename[FILENAME_MAX] = { 0, };
+	struct sockaddr_in serv_addr, clnt_addr;
+	DGRAM_HEADER *header = NULL;
+	clnt_list = malloc(sizeof(struct client_list) * client_count);
 
-	if (argc != 3) {
-		fprintf(stderr, "Usage %s <port_number> <buffer_size>\n", argv[0]);
+	if (argc != 2) {
+		fprintf(stderr, "Usage %s <port_number>\n", argv[0]);
 		exit(1);
 	}
 
@@ -38,9 +138,7 @@ int main(int argc, char *argv[]) {
 		exit(1);
 	}
 
-	message = (char *)malloc(sizeof(char) * BUFSIZ);
-
-	if ((serv_sock = socket(PF_INET, SOCK_DGRAM, 0)) < 0) {
+	if ((sock = socket(PF_INET, SOCK_DGRAM, 0)) < 0) {
 		perror("socket error");
 		exit(1);
 	}
@@ -49,18 +147,32 @@ int main(int argc, char *argv[]) {
 	serv_addr.sin_family = PF_INET;
 	serv_addr.sin_port = htons(port);
 	serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	if (bind(serv_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+	if (bind(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
 		perror("bind error");
 		exit(1);
 	}
 
+	signal(SIGALRM, disconnect_handler);
+
 	while (1) {
-		clnt_addr_size = sizeof(clnt_addr);
-		data_len = recvfrom(serv_sock, message, BUFSIZ - 1, 0, (struct sockaddr *)&clnt_addr, &clnt_addr_size);
-		printf("%d\n", data_len);
-		break;
+		data_len = receive_data(sock, message, BUFSIZ, &clnt_addr, &clnt_num);
+		if (data_len == -1) {
+			printf("Invalid packet!\n");
+			continue;
+		}
+		header = get_header(message);
+		if (header->flags & MSK_SYN) {
+			get_content(filename, message, data_len);
+			connect_with(clnt_num, sock);
+		}
+		else if (header->flags & MSK_FIN) {
+			disconnect_with(clnt_num, message, data_len);
+		}
+		else {
+			work_with(clnt_num, message, data_len, filename);
+		}
+		free(header);
 	}
 
-	free(message);
 	return 0;
 }
