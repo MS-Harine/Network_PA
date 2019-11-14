@@ -218,9 +218,16 @@ int work(int clnt_sock) {
 			}
 			free(message);
 			
-			more_data = (char *)malloc(sizeof(char) * (content_length + 1));
+			more_data = (char *)malloc(sizeof(char) * (content_length + 15));
 			recv(clnt_sock, more_data, content_length, 0);
 			more_data[content_length] = 0;
+
+			temp = malloc(sizeof(char) * (content_length + 15));
+			strcpy(temp, "<h2>");
+			strcat(temp, more_data);
+			strcat(temp, "</h2>");
+			strcpy(more_data, temp);
+			free(temp);
 			DPRINT(printf("More_data: %s\n", more_data));
 			send_response(clnt_sock, 200, more_data, 0);
 			free(more_data);
