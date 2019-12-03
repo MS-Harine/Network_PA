@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
 			readCoils(sock);
 			break;
 		case 2:
-			//writeMultipleCoils(sock);
+			writeMultipleCoils(sock);
 			break;
 		case 3:
 			readHoldingRegisters(sock);

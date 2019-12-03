@@ -22,5 +22,6 @@ typedef struct _header {
 void readCoils(int sock);
 void readHoldingRegisters(int sock);
 void writeMultipleCoils(int sock);
+void writeMultipleRegisters(int sock);
 
 #endif
