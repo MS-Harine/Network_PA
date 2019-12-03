@@ -52,6 +52,7 @@ int main(int argc, char *argv[]) {
 			readHoldingRegisters(sock);
 			break;
 		case 4:
+			writeMultipleRegisters(sock);
 			break;
 		case 100:
 			flag = 1;

@@ -334,6 +334,7 @@ void _writeMultipleRegisters(int sock, int start_address, int num_of_registers, 
 
 	data_with_header = make_data(header, data);
 	data_len = strlen(data_with_header) / 2;
+	string2hex(data_with_header);
 	
 	DPRINT(
 		printf("====== Sending data ======\n");
@@ -357,7 +358,7 @@ void _writeMultipleRegisters(int sock, int start_address, int num_of_registers, 
 
 	trans_id = hex2int(data, 2);
 	code = hex2int(data + HEADER_LENGTH - 1, 1);
-	if (code != WRITE_MULTIPLE_COILS) {
+	if (code != WRITE_MULTIPLE_REGISTERS) {
 		data_len = hex2int(data + HEADER_LENGTH, 1);
 		printf("\nExceptions on Write Multiple Registers\n");
 		printf("Exception code: %d\n\n", data_len);
